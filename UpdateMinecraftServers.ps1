@@ -70,39 +70,36 @@ foreach ($serverDir in $serverPaths) {
     }
 }
 
-# Web request and update logic
+# Web request and update logic using new Minecraft Bedrock API
 try {
-    # Start web request session
-    $session = [Microsoft.PowerShell.Commands.WebRequestSession]::new()
-    $session.UserAgent = 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/106.0.0.0 Safari/537.36'
-    $InvokeWebRequestSplatt = @{
-        UseBasicParsing = $true
-        Uri             = 'https://www.minecraft.net/en-us/download/server/bedrock'
-        WebSession      = $session
-        TimeoutSec      = 10
-        Headers         = @{
-            "accept"          = "text/html,application/xhtml+xml,application/xml;q=0.9,image/avif,image/webp,image/apng,*/*;q=0.8"
-            "accept-encoding" = "gzip, deflate, br"
-            "accept-language" = "en-US,en;q=0.8"
-        }
+    $apiUrl = "https://net-secondary.web.minecraft-services.net/api/v1.0/download/links"
+
+    $headers = @{
+        "User-Agent"      = 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/106.0.0.0 Safari/537.36'
+        "accept"          = "application/json"
+        "accept-language" = "en-US,en;q=0.8"
     }
 
-    # Get data from web
-    $requestResult = Invoke-WebRequest @InvokeWebRequestSplatt
-    if ($requestResult -and $requestResult.Links) {
-        # Parse download link and file name
-        $serverurl = $requestResult.Links | select href | where {$_.href -like "https://www.minecraft.net/bedrockdedicatedserver/bin-win/bedrock-server*"}
-        if ($serverurl) {
-            $url = $serverurl.href
-            $filename = $url.Replace("https://www.minecraft.net/bedrockdedicatedserver/bin-win/", "")
+    $response = Invoke-RestMethod -Uri $apiUrl -Method Get -Headers $headers -TimeoutSec 10
+
+    # DEBUG #
+    $response | ConvertTo-Json -Depth 5 | Out-File "$scriptDir\response_debug.json"
+    # DEBUG END #
+
+    $links = $response.result.links
+    if ($links) {
+        $link = $links | Where-Object { $_.downloadType -eq "serverBedrockWindows" }
+        if ($link -and $link.downloadUrl) {
+            $url = $link.downloadUrl
+            $filename = [System.IO.Path]::GetFileName($url)
             $output = "$updateDir\$filename"
             Log-Message "NEWEST UPDATE AVAILABLE: $filename"
         } else {
-            Log-Message "ERROR: Failed to find the download link on the page."
+            Log-Message "ERROR: Could not find a download URL for 'serverBedrockWindows'."
             exit 1
         }
     } else {
-        Log-Message "ERROR: Web request did not return expected content."
+        Log-Message "ERROR: JSON response did not contain expected structure."
         exit 1
     }
 } catch {
